@@ -2,7 +2,7 @@ FROM python:3.10
 
 WORKDIR /app
 
-# 1. ติดตั้ง System Dependencies (เพิ่ม libgomp1 สำหรับ PyTorch CPU)
+# 1. ติดตั้ง System Dependencies
 RUN apt-get update && apt-get install -y \
     git build-essential libgomp1 \
     && rm -rf /var/lib/apt/lists/*
@@ -10,24 +10,25 @@ RUN apt-get update && apt-get install -y \
 # 2. อัปเดต pip
 RUN pip install --upgrade pip setuptools wheel
 
-# 3. รวบการติดตั้งทุกอย่างไว้ในคำสั่งเดียว และใช้ --extra-index-url 
-# เพื่อป้องกันไม่ให้ pip แอบไปโหลด PyTorch เวอร์ชันการ์ดจอมาทับ
+# 3. ลบการล็อกเวอร์ชัน ==2.3.0 ออก เพื่อให้มันดึง PyTorch CPU เวอร์ชันล่าสุดเสมอ
+# และเพิ่ม einops เข้าไป เพราะโมเดลใหม่ๆ มักจะเรียกใช้
 RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu \
-    torch==2.3.0+cpu \
+    torch \
     "transformers @ git+https://github.com/huggingface/transformers.git" \
-    fastapi==0.111.0 \
-    uvicorn==0.30.1 \
+    fastapi \
+    uvicorn \
     accelerate \
     huggingface_hub \
     safetensors \
-    numpy
+    numpy \
+    einops
 
 # 4. ตั้งค่าตัวแปรระบบ
 ENV USE_TORCH=1
 
-# 5. ทดสอบการติดตั้งในขั้นตอน Build
+# 5. ทดสอบการติดตั้ง
 RUN python -c "import os; os.environ['USE_TORCH']='1'; import torch; import transformers; print('torch:', torch.__version__); print('transformers:', transformers.__version__)"
-RUN python -c "import os; os.environ['USE_TORCH']='1'; from transformers import TimesFm2_5ModelForPrediction; print('TimesFm2_5 OK')"
+RUN python -c "import os; os.environ['USE_TORCH']='1'; import transformers.utils.import_utils; transformers.utils.import_utils._torch_available = True; from transformers import TimesFm2_5ModelForPrediction; print('TimesFm2_5 OK')"
 
 # 6. ดาวน์โหลดโมเดล
 RUN python -c "\
