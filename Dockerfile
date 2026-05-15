@@ -8,10 +8,13 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
+# ติดตั้ง torch ก่อนแยก เพื่อให้แน่ใจว่าได้ CPU version
+RUN pip install --no-cache-dir torch>=2.2.2 --index-url https://download.pytorch.org/whl/cpu
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download model ตอน build เลย ไม่ต้องรอตอน runtime
+# Pre-download model ตอน build เลย
 RUN python -c "\
 from huggingface_hub import snapshot_download; \
 snapshot_download(repo_id='google/timesfm-2.5-200m-transformers', \
