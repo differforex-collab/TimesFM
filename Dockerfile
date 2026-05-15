@@ -7,16 +7,19 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --upgrade pip
+RUN pip install --upgrade pip setuptools wheel
 
-# ใช้ CPU-only torch จริง
+# CPU torch
 RUN pip install --no-cache-dir \
     torch==2.3.0+cpu \
     torchvision==0.18.0+cpu \
     torchaudio==2.3.0+cpu \
     --index-url https://download.pytorch.org/whl/cpu
 
-# packages หลัก
+# remove transformers เก่า
+RUN pip uninstall -y transformers || true
+
+# install dependencies
 RUN pip install --no-cache-dir \
     fastapi==0.111.0 \
     uvicorn==0.30.1 \
@@ -24,19 +27,20 @@ RUN pip install --no-cache-dir \
     huggingface_hub==0.32.0 \
     safetensors \
     sentencepiece \
-    protobuf
+    protobuf \
+    numpy
 
-# ใช้ transformers ล่าสุดจาก github
-RUN pip uninstall -y transformers
-
+# IMPORTANT:
+# install transformers stable branch ที่รองรับ TimesFM2.5
 RUN pip install --no-cache-dir \
-git+https://github.com/huggingface/transformers.git
+    git+https://github.com/huggingface/transformers.git@v4.53.0
 
-# เช็ค torch
-RUN python -c "import torch; print('Torch OK:', torch.__version__)"
+# verify
+RUN python -c "import torch; print('Torch:', torch.__version__)"
 
-# เช็ค transformers
-RUN python -c "import transformers; print('Transformers OK:', transformers.__version__)"
+RUN python -c "import transformers; \
+print('Transformers:', transformers.__version__); \
+print('Torch available:', transformers.is_torch_available())"
 
 COPY . .
 
