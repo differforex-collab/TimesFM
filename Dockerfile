@@ -27,8 +27,10 @@ RUN pip install --no-cache-dir \
     protobuf
 
 # ใช้ transformers ล่าสุดจาก github
+RUN pip uninstall -y transformers
+
 RUN pip install --no-cache-dir \
-    git+https://github.com/huggingface/transformers.git
+git+https://github.com/huggingface/transformers.git
 
 # เช็ค torch
 RUN python -c "import torch; print('Torch OK:', torch.__version__)"
