@@ -1,14 +1,25 @@
 import os
+import sys
 import traceback
 
 os.environ["USE_TORCH"] = "1"
 os.environ["TRANSFORMERS_NO_TF"] = "1"
+os.environ["TRANSFORMERS_NO_FLAX"] = "1"
 
+# force torch ให้ import ก่อนทุกอย่าง
 import torch
-import transformers
-
 print(f"torch: {torch.__version__}")
+print(f"torch path: {torch.__file__}")
+
+# บังคับ transformers ให้เห็น torch
+import importlib
+import transformers.utils
+transformers.utils.import_utils._torch_available = True
+transformers.utils.import_utils.torch = torch
+
+import transformers
 print(f"transformers: {transformers.__version__}")
+print(f"torch available: {transformers.is_torch_available()}")
 
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -47,6 +58,7 @@ def root():
         "model": MODEL_ID,
         "torch": torch.__version__,
         "transformers": transformers.__version__,
+        "torch_available": transformers.is_torch_available(),
         "error": load_error
     }
 
@@ -63,10 +75,8 @@ async def predict(body: PriceInput):
         return {"error": "Need at least 64 candles"}
     try:
         past_values = [torch.tensor(body.prices, dtype=torch.float32)]
-
         with torch.no_grad():
             outputs = model(past_values=past_values, return_dict=True)
-
         forecast = outputs.mean_predictions.tolist()
         return {"forecast": forecast[0][:12]}
     except Exception as e:
