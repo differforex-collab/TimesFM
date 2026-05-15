@@ -1,79 +1,53 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-import timesfm
+from transformers import AutoModelForPrediction # ใช้หัวอ่านตัวใหม่
+import torch
 import uvicorn
 import os
-import traceback
 
 app = FastAPI()
+model = None
 
-tfm = None
-load_error = None
+# ตั้งค่าโมเดล ID ตามที่ระบบ 2.5 กำหนด
+MODEL_ID = "google/timesfm-2.5-200m-transformers"
 
-try:
-
-    print("⏳ Loading TimesFM...")
-
-    tfm = timesfm.TimesFm(
-        hparams=timesfm.TimesFmHparams(
-            backend="cpu",
-            per_core_batch_size=1,
-            horizon_len=12,
-            context_len=64,
-        ),
-        checkpoint=timesfm.TimesFmCheckpoint(
-            huggingface_repo_id="google/timesfm-2.5-200m-transformers"
-        ),
-    )
-
-    print("✅ MODEL READY")
-
-except Exception as e:
-
-    load_error = str(e)
-    print(f"❌ LOAD ERROR: {e}")
-    traceback.print_exc()
-
+@app.on_event("startup")
+async def load_model():
+    global model
+    try:
+        print(f"⏳ Loading {MODEL_ID}...")
+        # โหลดโมเดลผ่าน Transformers สไตล์ 2.5
+        model = AutoModelForPrediction.from_pretrained(
+            MODEL_ID,
+            device_map="auto", # Railway จะเลือก CPU/GPU ให้เอง
+            trust_remote_code=True
+        )
+        print("✅ TimesFM 2.5 Ready!")
+    except Exception as e:
+        print(f"❌ Load Error: {e}")
 
 class PriceInput(BaseModel):
     prices: list[float]
 
-
-@app.get("/")
-def root():
-    return {
-        "status": "online" if tfm else "offline",
-        "error": load_error
-    }
-
-
 @app.post("/predict")
 async def predict(body: PriceInput):
-
-    if tfm is None:
-        return {"error": f"Model not loaded: {load_error}"}
-
+    if model is None:
+        return {"error": "Model not loaded"}
+    
     try:
+        # ส่งค่า Raw Data เข้าไปได้เลย เพราะโมเดลมี RevIN ในตัว
+        inputs = torch.tensor([body.prices])
+        
+        # พยากรณ์ไปข้างหน้า 12-13 แท่งตามที่ตั้งค่า
+        with torch.no_grad():
+            outputs = model.predict(inputs, horizon_len=12)
+            # ดึงเฉพาะค่าพยากรณ์ออกมา
+            forecast = outputs.point_forecast.tolist()[0]
 
-        forecast, _ = tfm.forecast(
-            inputs=[body.prices],
-            freq=[0]
-        )
-
-        return {
-            "forecast": forecast.tolist()[0]
-        }
-
+        return {"forecast": forecast}
     except Exception as e:
         return {"error": str(e)}
 
-
 if __name__ == "__main__":
-
     port = int(os.environ.get("PORT", 8080))
-
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=port
-    )
+    uvicorn.run(app, host="0.0.0.0", port=port)
