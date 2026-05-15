@@ -65,18 +65,26 @@ async def predict(body: PriceInput):
         }
 
     try:
+        # สมมติฐาน: โมเดลรับ Input คล้ายๆ ของเดิม แต่อาจต้องใช้ kwargs เฉพาะ
         context = torch.tensor(
             body.prices,
             dtype=torch.float32
-        ).unsqueeze(0)
+        ).unsqueeze(0) # อาจจะต้องเช็ค Shape อีกทีว่าโมเดลต้องการ [batch, sequence_length] หรือเปล่า
 
         with torch.no_grad():
-            forecast = model.generate(
-                context,
-                max_new_tokens=12
-            )
-
-        result = forecast[0][-12:].tolist()
+            # 🔴 จุดที่เปลี่ยน: ใช้โมเดลเหมือนฟังก์ชันแทนที่จะใช้ .generate()
+            outputs = model(context) 
+            
+            # ดึงค่า forecast ออกมาจาก outputs 
+            # *หมายเหตุ: ตรงนี้อาจต้อง .squeeze() หรือดึงจาก outputs.predictions 
+            # ขึ้นอยู่กับโครงสร้าง Output ของโมเดล TimesFM 2.5
+            if hasattr(outputs, 'predictions'):
+                forecast = outputs.predictions
+            else:
+                 forecast = outputs # ถ้า return ออกมาเป็น Tensor เลย
+                 
+            # ดึง 12 แท่งสุดท้าย
+            result = forecast[0][-12:].tolist() 
 
         return {
             "forecast": result
