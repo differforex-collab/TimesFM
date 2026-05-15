@@ -1,26 +1,12 @@
 import os
-import sys
-import traceback
 
+# บังคับประกาศตัวแปรให้ระบบรู้ว่าใช้ PyTorch (ต้องอยู่บนสุดก่อน import ตัวอื่น)
 os.environ["USE_TORCH"] = "1"
-os.environ["TRANSFORMERS_NO_TF"] = "1"
-os.environ["TRANSFORMERS_NO_FLAX"] = "1"
 
-# force torch ให้ import ก่อนทุกอย่าง
+import traceback
 import torch
-print(f"torch: {torch.__version__}")
-print(f"torch path: {torch.__file__}")
 
-# บังคับ transformers ให้เห็น torch
-import importlib
-import transformers.utils
-transformers.utils.import_utils._torch_available = True
-transformers.utils.import_utils.torch = torch
-
-import transformers
-print(f"transformers: {transformers.__version__}")
-print(f"torch available: {transformers.is_torch_available()}")
-
+from transformers import TimesFm2_5ModelForPrediction
 from fastapi import FastAPI
 from pydantic import BaseModel
 import uvicorn
@@ -29,61 +15,78 @@ app = FastAPI()
 
 model = None
 load_error = None
-MODEL_ID = "google/timesfm-2.5-200m-transformers"
-
 
 @app.on_event("startup")
 async def load_model():
     global model, load_error
     try:
-        print(f"⏳ Loading model: {MODEL_ID}")
-        from transformers import TimesFm2_5ModelForPrediction
+        print("⏳ Loading TimesFM 2.5...")
         model = TimesFm2_5ModelForPrediction.from_pretrained(
-            MODEL_ID,
+            "google/timesfm-2.5-200m-transformers",
             torch_dtype=torch.float32,
-            device_map="cpu"
+            device_map="cpu",
+            trust_remote_code=True
         )
-        model.eval()
-        print("✅ TimesFM 2.5 Ready")
+        print("✅ MODEL READY")
     except Exception as e:
         load_error = str(e)
         print(f"❌ LOAD ERROR: {e}")
         traceback.print_exc()
 
-
 @app.get("/")
 def root():
+    import transformers
+    from transformers.utils import is_torch_available
+    
     return {
         "status": "online" if model else "offline",
-        "model": MODEL_ID,
+        "model": "google/timesfm-2.5-200m-transformers",
         "torch": torch.__version__,
         "transformers": transformers.__version__,
-        "torch_available": transformers.is_torch_available(),
+        "torch_available": is_torch_available(),
         "error": load_error
     }
-
 
 class PriceInput(BaseModel):
     prices: list[float]
 
-
 @app.post("/predict")
 async def predict(body: PriceInput):
+    global model
+
     if model is None:
-        return {"error": f"Model not loaded: {load_error}"}
-    if len(body.prices) < 64:
-        return {"error": "Need at least 64 candles"}
+        return {
+            "error": f"Model not loaded: {load_error}"
+        }
+
     try:
-        past_values = [torch.tensor(body.prices, dtype=torch.float32)]
+        context = torch.tensor(
+            body.prices,
+            dtype=torch.float32
+        ).unsqueeze(0)
+
         with torch.no_grad():
-            outputs = model(past_values=past_values, return_dict=True)
-        forecast = outputs.mean_predictions.tolist()
-        return {"forecast": forecast[0][:12]}
+            forecast = model.generate(
+                context,
+                max_new_tokens=12
+            )
+
+        result = forecast[0][-12:].tolist()
+
+        return {
+            "forecast": result
+        }
+
     except Exception as e:
         traceback.print_exc()
-        return {"error": str(e)}
-
+        return {
+            "error": str(e)
+        }
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=port
+    )
