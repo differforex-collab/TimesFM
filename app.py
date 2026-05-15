@@ -1,10 +1,12 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
-from transformers import AutoModel
-import torch
-import uvicorn
 import os
 import traceback
+import torch
+
+print(f"✅ torch version: {torch.__version__}")
+
+from fastapi import FastAPI
+from pydantic import BaseModel
+import uvicorn
 
 app = FastAPI()
 
@@ -18,6 +20,7 @@ async def load_model():
     global model, load_error
     try:
         print(f"⏳ Loading {MODEL_ID}...")
+        from transformers import AutoModel
         model = AutoModel.from_pretrained(
             MODEL_ID,
             trust_remote_code=True,
@@ -37,6 +40,7 @@ def root():
     return {
         "status": "online" if model else "offline",
         "model": MODEL_ID,
+        "torch": torch.__version__,
         "error": load_error
     }
 
@@ -47,35 +51,21 @@ class PriceInput(BaseModel):
 
 @app.post("/predict")
 async def predict(body: PriceInput):
-
     if model is None:
         return {"error": f"Model not loaded: {load_error}"}
-
     if len(body.prices) < 64:
         return {"error": "Need at least 64 candles"}
-
     try:
-        inputs = torch.tensor(
-            [body.prices],
-            dtype=torch.float32
-        )
-
+        inputs = torch.tensor([body.prices], dtype=torch.float32)
         with torch.no_grad():
-            outputs = model.predict(
-                inputs,
-                horizon_len=12
-            )
-
-        # รองรับหลาย output format
+            outputs = model.predict(inputs, horizon_len=12)
         if hasattr(outputs, "point_forecast"):
             forecast = outputs.point_forecast.tolist()[0]
         elif hasattr(outputs, "forecast"):
             forecast = outputs.forecast.tolist()[0]
         else:
             forecast = outputs.tolist()[0]
-
         return {"forecast": forecast}
-
     except Exception as e:
         traceback.print_exc()
         return {"error": str(e)}
