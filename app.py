@@ -19,7 +19,6 @@ app = FastAPI()
 model = None
 load_error = None
 MODEL_ID = "google/timesfm-2.5-200m-transformers"
-CACHE_DIR = "/root/.cache/huggingface/hub"
 
 
 @app.on_event("startup")
@@ -27,32 +26,14 @@ async def load_model():
     global model, load_error
     try:
         print(f"⏳ Loading model: {MODEL_ID}")
-
-        from transformers import AutoConfig
-        from transformers.dynamic_module_utils import get_class_from_dynamic_module
-
-        config = AutoConfig.from_pretrained(
+        from transformers import TimesFm2_5ModelForPrediction
+        model = TimesFm2_5ModelForPrediction.from_pretrained(
             MODEL_ID,
-            trust_remote_code=True,
-            cache_dir=CACHE_DIR
-        )
-
-        model_class = get_class_from_dynamic_module(
-            "modeling_timesfm.TimesFMModel",
-            MODEL_ID,
-            cache_dir=CACHE_DIR
-        )
-
-        model = model_class.from_pretrained(
-            MODEL_ID,
-            config=config,
-            trust_remote_code=True,
             torch_dtype=torch.float32,
-            cache_dir=CACHE_DIR
+            device_map="cpu"
         )
         model.eval()
         print("✅ TimesFM 2.5 Ready")
-
     except Exception as e:
         load_error = str(e)
         print(f"❌ LOAD ERROR: {e}")
@@ -81,15 +62,13 @@ async def predict(body: PriceInput):
     if len(body.prices) < 64:
         return {"error": "Need at least 64 candles"}
     try:
-        context = torch.tensor([body.prices], dtype=torch.float32)
-        freq = torch.tensor([0])
+        past_values = [torch.tensor(body.prices, dtype=torch.float32)]
+
         with torch.no_grad():
-            forecast = model.forecast(context=context, freq=freq)
-        if isinstance(forecast, tuple):
-            forecast = forecast[0]
-        if hasattr(forecast, "tolist"):
-            forecast = forecast.tolist()
-        return {"forecast": forecast}
+            outputs = model(past_values=past_values, return_dict=True)
+
+        forecast = outputs.mean_predictions.tolist()
+        return {"forecast": forecast[0][:12]}
     except Exception as e:
         traceback.print_exc()
         return {"error": str(e)}
