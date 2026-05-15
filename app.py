@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-from transformers import AutoModel # เปลี่ยนมาใช้ตัวนี้แทน
+from transformers import AutoModel  # แก้จาก AutoModelForPrediction เป็น AutoModel 
 import torch
+import uvicorn
 import os
 
 app = FastAPI()
@@ -13,12 +14,15 @@ async def load_model():
     global model
     try:
         print(f"⏳ Loading {MODEL_ID}...")
-        # ใช้ AutoModel ร่วมกับ trust_remote_code=True
+        # ใช้ AutoModel พร้อม trust_remote_code=True เพื่อโหลดคลาสเฉพาะของ TimesFM 2.5 
         model = AutoModel.from_pretrained(
             MODEL_ID,
             trust_remote_code=True
         )
-        print("✅ TimesFM 2.5 Ready!")
+        # ตรวจสอบว่ามี GPU ไหม ถ้าไม่มีให้ใช้ CPU
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model.to(device)
+        print(f"✅ TimesFM 2.5 Ready on {device}!")
     except Exception as e:
         print(f"❌ Load Error: {e}")
 
@@ -31,13 +35,12 @@ async def predict(body: PriceInput):
         return {"error": "Model not loaded"}
     
     try:
-        # ส่งค่า Raw Data เข้าไปได้เลย เพราะโมเดลมี RevIN ในตัว
+        # เตรียมข้อมูล Input
         inputs = torch.tensor([body.prices])
         
-        # พยากรณ์ไปข้างหน้า 12-13 แท่งตามที่ตั้งค่า
         with torch.no_grad():
+            # เรียกใช้ฟังก์ชัน predict ของ TimesFM 2.5 
             outputs = model.predict(inputs, horizon_len=12)
-            # ดึงเฉพาะค่าพยากรณ์ออกมา
             forecast = outputs.point_forecast.tolist()[0]
 
         return {"forecast": forecast}
