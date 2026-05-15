@@ -9,9 +9,7 @@ import transformers
 
 print(f"torch: {torch.__version__}")
 print(f"transformers: {transformers.__version__}")
-print(f"torch available: {transformers.is_torch_available()}")
 
-from transformers import AutoConfig, AutoModel
 from fastapi import FastAPI
 from pydantic import BaseModel
 import uvicorn
@@ -21,6 +19,7 @@ app = FastAPI()
 model = None
 load_error = None
 MODEL_ID = "google/timesfm-2.5-200m-transformers"
+CACHE_DIR = "/root/.cache/huggingface/hub"
 
 
 @app.on_event("startup")
@@ -28,23 +27,35 @@ async def load_model():
     global model, load_error
     try:
         print(f"⏳ Loading model: {MODEL_ID}")
-        # timesfm2_5 ต้องโหลด config ก่อน แล้วค่อยโหลด model ด้วย trust_remote_code
+
+        from transformers import AutoConfig
+        from transformers.dynamic_module_utils import get_class_from_dynamic_module
+
         config = AutoConfig.from_pretrained(
             MODEL_ID,
-            trust_remote_code=True
+            trust_remote_code=True,
+            cache_dir=CACHE_DIR
         )
-        model = AutoModel.from_pretrained(
+
+        model_class = get_class_from_dynamic_module(
+            "modeling_timesfm.TimesFMModel",
+            MODEL_ID,
+            cache_dir=CACHE_DIR
+        )
+
+        model = model_class.from_pretrained(
             MODEL_ID,
             config=config,
             trust_remote_code=True,
-            torch_dtype=torch.float32
+            torch_dtype=torch.float32,
+            cache_dir=CACHE_DIR
         )
         model.eval()
         print("✅ TimesFM 2.5 Ready")
+
     except Exception as e:
         load_error = str(e)
-        print("❌ LOAD ERROR")
-        print(str(e))
+        print(f"❌ LOAD ERROR: {e}")
         traceback.print_exc()
 
 
@@ -55,7 +66,6 @@ def root():
         "model": MODEL_ID,
         "torch": torch.__version__,
         "transformers": transformers.__version__,
-        "torch_available": transformers.is_torch_available(),
         "error": load_error
     }
 
