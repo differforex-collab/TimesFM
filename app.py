@@ -1,19 +1,26 @@
 import os
 
+# บังคับ transformers ใช้ torch เท่านั้น
 os.environ["USE_TORCH"] = "1"
 os.environ["USE_TF"] = "0"
+os.environ["TRANSFORMERS_NO_TF"] = "1"
+os.environ["TRANSFORMERS_NO_FLAX"] = "1"
+os.environ["OMP_NUM_THREADS"] = "1"
 
-import torch
 import traceback
 import torch
-print(torch.__file__)
-print(torch.__version__)
 
-print(f"✅ torch version: {torch.__version__}")
+print("Torch file:", torch.__file__)
+print("Torch version:", torch.__version__)
 
 from fastapi import FastAPI
 from pydantic import BaseModel
 import uvicorn
+
+import transformers
+print("Transformers version:", transformers.__version__)
+print("Torch available:", transformers.is_torch_available())
+
 from transformers import AutoModel
 
 app = FastAPI()
@@ -29,12 +36,11 @@ async def load_model():
     global model, load_error
 
     try:
-        print(f"⏳ Loading {MODEL_ID}...")
+        print(f"⏳ Loading model: {MODEL_ID}")
 
         model = AutoModel.from_pretrained(
             MODEL_ID,
             trust_remote_code=True,
-            device_map="cpu",
             torch_dtype=torch.float32
         )
 
@@ -44,16 +50,22 @@ async def load_model():
 
     except Exception as e:
         load_error = str(e)
-        print(f"❌ LOAD ERROR: {e}")
+
+        print("❌ LOAD ERROR")
+        print(str(e))
+
         traceback.print_exc()
 
 
 @app.get("/")
 def root():
+
     return {
         "status": "online" if model else "offline",
         "model": MODEL_ID,
         "torch": torch.__version__,
+        "transformers": transformers.__version__,
+        "torch_available": transformers.is_torch_available(),
         "error": load_error
     }
 
@@ -65,13 +77,19 @@ class PriceInput(BaseModel):
 @app.post("/predict")
 async def predict(body: PriceInput):
 
+    global model
+
     if model is None:
-        return {"error": load_error}
+        return {
+            "error": f"Model not loaded: {load_error}"
+        }
 
     try:
 
         if len(body.prices) < 64:
-            return {"error": "Need at least 64 candles"}
+            return {
+                "error": "Need at least 64 candles"
+            }
 
         context = torch.tensor(
             [body.prices],
@@ -87,16 +105,25 @@ async def predict(body: PriceInput):
                 freq=freq
             )
 
+        # บาง version return tuple
         if isinstance(forecast, tuple):
             forecast = forecast[0]
 
+        # tensor -> list
+        if hasattr(forecast, "tolist"):
+            forecast = forecast.tolist()
+
         return {
-            "forecast": forecast.tolist()
+            "forecast": forecast
         }
 
     except Exception as e:
+
         traceback.print_exc()
-        return {"error": str(e)}
+
+        return {
+            "error": str(e)
+        }
 
 
 if __name__ == "__main__":
