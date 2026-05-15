@@ -1,6 +1,13 @@
 import os
+
+os.environ["USE_TORCH"] = "1"
+os.environ["USE_TF"] = "0"
+
+import torch
 import traceback
 import torch
+print(torch.__file__)
+print(torch.__version__)
 
 print(f"✅ torch version: {torch.__version__}")
 
