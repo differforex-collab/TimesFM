@@ -4,12 +4,10 @@ os.environ["USE_TORCH"] = "1"
 import traceback
 import torch
 
-# ---------------------------------------------------------
-# 🔥 ไม้ตาย: บังคับให้ Transformers ยอมรับว่ามี PyTorch อยู่จริงๆ
+# บังคับสถานะให้ Transformers ยอมรับ PyTorch
 import transformers.utils.import_utils
 transformers.utils.import_utils._torch_available = True
 transformers.utils.import_utils._torch_version = torch.__version__
-# ---------------------------------------------------------
 
 from transformers import TimesFm2_5ModelForPrediction
 from fastapi import FastAPI
@@ -26,12 +24,14 @@ async def load_model():
     global model, load_error
     try:
         print("⏳ Loading TimesFM 2.5...")
+        # โหลดโมเดล และปรับให้อยู่ในโหมดประเมินผล (eval)
         model = TimesFm2_5ModelForPrediction.from_pretrained(
             "google/timesfm-2.5-200m-transformers",
             torch_dtype=torch.float32,
             device_map="cpu",
             trust_remote_code=True
         )
+        model = model.eval()
         print("✅ MODEL READY")
     except Exception as e:
         load_error = str(e)
@@ -65,26 +65,19 @@ async def predict(body: PriceInput):
         }
 
     try:
-        # สมมติฐาน: โมเดลรับ Input คล้ายๆ ของเดิม แต่อาจต้องใช้ kwargs เฉพาะ
-        context = torch.tensor(
-            body.prices,
-            dtype=torch.float32
-        ).unsqueeze(0) # อาจจะต้องเช็ค Shape อีกทีว่าโมเดลต้องการ [batch, sequence_length] หรือเปล่า
+        # 1. แปลงข้อมูลลิสต์ราคาจาก EA ให้เป็น List ของ 1D Tensor ตามคู่มือ Hugging Face
+        past_values = [
+            torch.tensor(body.prices, dtype=torch.float32)
+        ]
 
+        # 2. ป้อนข้อมูลเข้าโมเดลโดยตรงเพื่อทำนายผล
         with torch.no_grad():
-            # 🔴 จุดที่เปลี่ยน: ใช้โมเดลเหมือนฟังก์ชันแทนที่จะใช้ .generate()
-            outputs = model(context) 
-            
-            # ดึงค่า forecast ออกมาจาก outputs 
-            # *หมายเหตุ: ตรงนี้อาจต้อง .squeeze() หรือดึงจาก outputs.predictions 
-            # ขึ้นอยู่กับโครงสร้าง Output ของโมเดล TimesFM 2.5
-            if hasattr(outputs, 'predictions'):
-                forecast = outputs.predictions
-            else:
-                 forecast = outputs # ถ้า return ออกมาเป็น Tensor เลย
-                 
-            # ดึง 12 แท่งสุดท้าย
-            result = forecast[0][-12:].tolist() 
+            outputs = model(past_values=past_values)
+
+        # 3. ดึงค่าจาก mean_predictions (โมเดลจะให้เฉพาะค่าของอนาคตออกมาเลย)
+        # ดึงลิสต์แรก [0] และเลือกเอาเฉพาะ 12 แท่งอนาคตแรก [:12] ตามที่ EA ต้องการ
+        forecast_all = outputs.mean_predictions[0].tolist()
+        result = forecast_all[:12]
 
         return {
             "forecast": result
