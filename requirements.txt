@@ -1,7 +1,6 @@
-transformers
-accelerate
+transformers>=4.41.0
+accelerate>=0.30.0
 peft
-pandas
-scikit-learn
-uvicorn
+torch
 fastapi
+uvicorn
