@@ -1,17 +1,14 @@
 import os
 
-# บังคับ transformers ใช้ torch เท่านั้น
 os.environ["USE_TORCH"] = "1"
-os.environ["USE_TF"] = "0"
 os.environ["TRANSFORMERS_NO_TF"] = "1"
-os.environ["TRANSFORMERS_NO_FLAX"] = "1"
-os.environ["OMP_NUM_THREADS"] = "1"
 
-import traceback
 import torch
+import transformers
 
-print("Torch file:", torch.__file__)
-print("Torch version:", torch.__version__)
+print(torch.__version__)
+print(transformers.__version__)
+print(transformers.is_torch_available())
 
 from fastapi import FastAPI
 from pydantic import BaseModel
