@@ -22,7 +22,7 @@ try:
             context_len=64,
         ),
         checkpoint=timesfm.TimesFmCheckpoint(
-            huggingface_repo_id="google/timesfm-1.0-200m-pytorch"
+            huggingface_repo_id="google/timesfm-2.5-200m-transformers"
         ),
     )
 
