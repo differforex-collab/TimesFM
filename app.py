@@ -1,14 +1,11 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-from transformers import AutoModelForPrediction # ใช้หัวอ่านตัวใหม่
+from transformers import AutoModel # เปลี่ยนมาใช้ตัวนี้แทน
 import torch
-import uvicorn
 import os
 
 app = FastAPI()
 model = None
-
-# ตั้งค่าโมเดล ID ตามที่ระบบ 2.5 กำหนด
 MODEL_ID = "google/timesfm-2.5-200m-transformers"
 
 @app.on_event("startup")
@@ -16,10 +13,9 @@ async def load_model():
     global model
     try:
         print(f"⏳ Loading {MODEL_ID}...")
-        # โหลดโมเดลผ่าน Transformers สไตล์ 2.5
-        model = AutoModelForPrediction.from_pretrained(
+        # ใช้ AutoModel ร่วมกับ trust_remote_code=True
+        model = AutoModel.from_pretrained(
             MODEL_ID,
-            device_map="auto", # Railway จะเลือก CPU/GPU ให้เอง
             trust_remote_code=True
         )
         print("✅ TimesFM 2.5 Ready!")
