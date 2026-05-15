@@ -1,10 +1,15 @@
 import os
-
-# บังคับประกาศตัวแปรให้ระบบรู้ว่าใช้ PyTorch (ต้องอยู่บนสุดก่อน import ตัวอื่น)
 os.environ["USE_TORCH"] = "1"
 
 import traceback
 import torch
+
+# ---------------------------------------------------------
+# 🔥 ไม้ตาย: บังคับให้ Transformers ยอมรับว่ามี PyTorch อยู่จริงๆ
+import transformers.utils.import_utils
+transformers.utils.import_utils._torch_available = True
+transformers.utils.import_utils._torch_version = torch.__version__
+# ---------------------------------------------------------
 
 from transformers import TimesFm2_5ModelForPrediction
 from fastapi import FastAPI
@@ -43,7 +48,7 @@ def root():
         "model": "google/timesfm-2.5-200m-transformers",
         "torch": torch.__version__,
         "transformers": transformers.__version__,
-        "torch_available": is_torch_available(),
+        "torch_available_forced": is_torch_available(),
         "error": load_error
     }
 
